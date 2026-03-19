@@ -1,6 +1,6 @@
 streamlit
-pandas==2.3.3
-numpy==2.4.3
-scikit-learn==1.8.0
+pandas
+numpy
+scikit-learn
 requests
-altair>=5.0.0
+altair
