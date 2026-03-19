@@ -17,7 +17,6 @@ def load_data():
         response = requests.get(url)
         response.raise_for_status()
 
-        # Try reading CSV
         df = pd.read_csv(StringIO(response.text))
 
         print("✅ Dataset loaded successfully")
@@ -36,20 +35,47 @@ print("Cleaned Columns:", df.columns)
 title_col = None
 text_col = None
 
+print("Available Columns:", df.columns)
+
+# Detect title column
+title_col = None
 for col in df.columns:
-    if "title" in col:
+    if "title" in col.lower():
         title_col = col
-    if "abstract" in col or "summary" in col or "description" in col:
-        text_col = col
+        break
 
-if not title_col:
-    raise Exception(f"❌ No title column found. Columns: {df.columns}")
+# Detect text column (more powerful logic)
+text_col = None
 
+priority_keywords = ["abstract", "summary", "text", "content", "description"]
+
+for key in priority_keywords:
+    for col in df.columns:
+        if key in col.lower():
+            text_col = col
+            break
+    if text_col:
+        break
+        
 if not text_col:
-    raise Exception(f"❌ No text column found. Columns: {df.columns}")
+    print("⚠️ No standard text column found, selecting largest text column...")
 
-print("Using title column:", title_col)
-print("Using text column:", text_col)
+    text_lengths = {}
+    for col in df.columns:
+        try:
+            avg_len = df[col].astype(str).str.len().mean()
+            text_lengths[col] = avg_len
+        except:
+            continue
+
+    text_col = max(text_lengths, key=text_lengths.get)
+
+# FINAL CHECK
+if not title_col:
+    title_col = df.columns[0]  # fallback
+
+print("✅ Selected title column:", title_col)
+print("✅ Selected text column:", text_col)
 
 author_col = next((c for c in df.columns if "author" in c), None)
 date_col = next((c for c in df.columns if "date" in c or "year" in c), None)
