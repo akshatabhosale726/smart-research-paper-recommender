@@ -11,32 +11,46 @@ DRIVE_URL = "https://drive.google.com/uc?id=1Rz06PQsTbRN9FnijXxrj2SThnL1NZiux"
 try:
     df = pd.read_csv(DRIVE_URL)
 except Exception as e:
-    raise Exception("❌ Failed to load dataset from Google Drive. Make sure file is public.")
+    raise Exception("❌ Failed to load dataset. Make sure Google Drive file is PUBLIC.")
 
-df.columns = df.columns.str.lower()
+# -----------------------------
+# DEBUG: PRINT COLUMNS
+# -----------------------------
+print("Dataset Columns:", df.columns)
 
-if "title" in df.columns:
-    title_col = "title"
-elif "titles" in df.columns:
-    title_col = "titles"
-else:
-    raise Exception("No title column found")
+df.columns = df.columns.str.lower().str.strip()
 
-if "abstract" in df.columns:
-    text_col = "abstract"
-elif "summary" in df.columns:
-    text_col = "summary"
-elif "summaries" in df.columns:
-    text_col = "summaries"
-else:
-    raise Exception("No abstract/summary column found")
+possible_title_cols = ["title", "titles", "paper_title", "name"]
 
+title_col = None
+for col in possible_title_cols:
+    if col in df.columns:
+        title_col = col
+        break
+
+if title_col is None:
+    title_col = df.columns[0]  
+    
+possible_text_cols = ["abstract", "summary", "summaries", "description", "content"]
+
+text_col = None
+for col in possible_text_cols:
+    if col in df.columns:
+        text_col = col
+        break
+
+if text_col is None:
+    text_col = df.columns[1] if len(df.columns) > 1 else df.columns[0]
+
+# -----------------------------
+# OPTIONAL COLUMNS
+# -----------------------------
 author_col = "authors" if "authors" in df.columns else None
 date_col = "published_date" if "published_date" in df.columns else None
 category_col = "categories" if "categories" in df.columns else None
 
-df[text_col] = df[text_col].fillna("")
-df[title_col] = df[title_col].fillna("")
+df[text_col] = df[text_col].fillna("").astype(str)
+df[title_col] = df[title_col].fillna("").astype(str)
 
 if author_col:
     df[author_col] = df[author_col].fillna("Unknown")
@@ -75,6 +89,9 @@ def recommend_papers(query, top_n=5):
         results.append((i, final_score))
 
     results = sorted(results, key=lambda x: x[1], reverse=True)[:top_n]
+
+    if not results:
+        return []
 
     max_score = results[0][1] if results[0][1] != 0 else 1
 
