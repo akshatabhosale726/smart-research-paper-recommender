@@ -1,68 +1,73 @@
 import pandas as pd
+import os
+import requests
+from io import StringIO
 
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 from utils.analyzer import extract_drawbacks, future_scope
 
-DRIVE_URL = "https://drive.google.com/uc?id=1Rz06PQsTbRN9FnijXxrj2SThnL1NZiux"
+def load_data():
+    try:
+        file_id = "1Rz06PQsTbRN9FnijXxrj2SThnL1NZiux"
 
-try:
-    df = pd.read_csv(DRIVE_URL)
-except Exception:
-    raise Exception("❌ Failed to load dataset. Make sure Google Drive file is PUBLIC.")
+        url = f"https://drive.google.com/uc?id={file_id}"
 
+        response = requests.get(url)
+        response.raise_for_status()
+
+        # Try reading CSV
+        df = pd.read_csv(StringIO(response.text))
+
+        print("✅ Dataset loaded successfully")
+        print("Columns:", df.columns)
+
+        return df
+
+    except Exception as e:
+        raise Exception(f"❌ Error loading dataset: {e}")
+
+
+df = load_data()
 df.columns = df.columns.str.lower().str.strip()
 
-possible_title_cols = ["title", "titles", "paper_title", "name"]
-
+print("Cleaned Columns:", df.columns)
 title_col = None
-for col in possible_title_cols:
-    if col in df.columns:
-        title_col = col
-        break
-
-if title_col is None:
-    title_col = df.columns[0]  # fallback
-
-possible_text_cols = ["abstract", "summary", "summaries", "description", "content"]
-
 text_col = None
-for col in possible_text_cols:
-    if col in df.columns:
+
+for col in df.columns:
+    if "title" in col:
+        title_col = col
+    if "abstract" in col or "summary" in col or "description" in col:
         text_col = col
-        break
 
-if text_col is None:
-    text_col = df.columns[1] if len(df.columns) > 1 else df.columns[0]
+if not title_col:
+    raise Exception(f"❌ No title column found. Columns: {df.columns}")
 
+if not text_col:
+    raise Exception(f"❌ No text column found. Columns: {df.columns}")
 
-author_col = "authors" if "authors" in df.columns else None
-date_col = "published_date" if "published_date" in df.columns else None
-category_col = "categories" if "categories" in df.columns else None
+print("Using title column:", title_col)
+print("Using text column:", text_col)
+
+author_col = next((c for c in df.columns if "author" in c), None)
+date_col = next((c for c in df.columns if "date" in c or "year" in c), None)
+category_col = next((c for c in df.columns if "category" in c), None)
 
 df[text_col] = df[text_col].fillna("").astype(str)
 df[title_col] = df[title_col].fillna("").astype(str)
 
-# Remove empty / very small text rows
+# Remove empty rows
 df = df[df[text_col].str.strip() != ""]
-df = df[df[text_col].str.len() > 20]
 
 if df.empty:
     raise Exception("❌ Dataset has no valid text data after cleaning")
 
-if author_col:
-    df[author_col] = df[author_col].fillna("Unknown")
+print("Final dataset size:", df.shape)
 
-if date_col:
-    df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
-
-try:
-    vectorizer = TfidfVectorizer(stop_words="english")
-    tfidf_matrix = vectorizer.fit_transform(df[text_col])
-except ValueError:
-    vectorizer = TfidfVectorizer(stop_words=None)
-    tfidf_matrix = vectorizer.fit_transform(df[text_col])
+vectorizer = TfidfVectorizer(stop_words="english", max_features=5000)
+tfidf_matrix = vectorizer.fit_transform(df[text_col])
 
 def extract_keywords(text):
     try:
@@ -72,9 +77,6 @@ def extract_keywords(text):
         return "N/A"
 
 def recommend_papers(query, top_n=5):
-
-    if not query.strip():
-        return []
 
     query_vec = vectorizer.transform([query])
     similarity = cosine_similarity(query_vec, tfidf_matrix).flatten()
@@ -87,18 +89,22 @@ def recommend_papers(query, top_n=5):
         row = df.iloc[i]
         sim_score = similarity[i]
 
-        year = row[date_col].year if date_col and pd.notna(row[date_col]) else 2000
-        recency_score = (year - 2000) / 30
+        # Year handling
+        year = 2000
+        if date_col and pd.notna(row[date_col]):
+            try:
+                year = pd.to_datetime(row[date_col]).year
+            except:
+                pass
 
+        recency_score = (year - 2000) / 30
         final_score = (0.65 * sim_score) + (0.35 * recency_score)
+
         results.append((i, final_score))
 
     results = sorted(results, key=lambda x: x[1], reverse=True)[:top_n]
 
-    if not results:
-        return []
-
-    max_score = results[0][1] if results[0][1] != 0 else 1
+    max_score = results[0][1] if results else 1
 
     papers = []
 
@@ -110,9 +116,16 @@ def recommend_papers(query, top_n=5):
 
         authors = row[author_col] if author_col else "Unknown"
         category = row[category_col] if category_col else "Research"
-        year = row[date_col].year if date_col and pd.notna(row[date_col]) else "Unknown"
+
+        year = "Unknown"
+        if date_col and pd.notna(row[date_col]):
+            try:
+                year = pd.to_datetime(row[date_col]).year
+            except:
+                pass
 
         score = round((score_val / max_score) * 100, 2)
+
         search_title = str(title).replace(" ", "+")
 
         papers.append({
@@ -123,8 +136,10 @@ def recommend_papers(query, top_n=5):
             "category": category,
             "summary": summary,
             "keywords": extract_keywords(summary),
+
             "drawbacks": extract_drawbacks(summary),
             "future_scope": future_scope(),
+
             "paper_link": f"https://arxiv.org/search/?query={search_title}&searchtype=all",
             "pdf_link": f"https://arxiv.org/search/?query={search_title}&searchtype=all",
             "scholar": f"https://scholar.google.com/scholar?q={search_title}"
