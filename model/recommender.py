@@ -6,10 +6,12 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from utils.analyzer import extract_drawbacks, future_scope
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_PATH = os.path.join(BASE_DIR, "dataset", "arxiv_scientific dataset.csv")
+DRIVE_URL = "https://drive.google.com/uc?id=1Rz06PQsTbRN9FnijXxrj2SThnL1NZiux"
 
-df = pd.read_csv(DATA_PATH)
+try:
+    df = pd.read_csv(DRIVE_URL)
+except Exception as e:
+    raise Exception("❌ Failed to load dataset from Google Drive. Make sure file is public.")
 
 df.columns = df.columns.str.lower()
 
@@ -52,9 +54,6 @@ def extract_keywords(text):
     except:
         return "N/A"
 
-# -----------------------------
-# MAIN FUNCTION
-# -----------------------------
 def recommend_papers(query, top_n=5):
 
     query_vec = vectorizer.transform([query])
@@ -94,7 +93,7 @@ def recommend_papers(query, top_n=5):
 
         score = round((score_val / max_score) * 100, 2)
 
-        search_title = title.replace(" ", "+")
+        search_title = str(title).replace(" ", "+")
 
         papers.append({
             "title": title,
