@@ -37,8 +37,8 @@ df.columns = df.columns.str.lower().str.strip()
 
 title_col = next((c for c in df.columns if "title" in c), None)
 text_col = next((c for c in df.columns if "abstract" in c or "summary" in c), None)
-author_col = next((c for c in df.columns if "author" in c), None)
-date_col = next((c for c in df.columns if "date" in c or "year" in c), None)
+author_col = next((c for c in df.columns if any(x in c for x in ["author", "creator"])), None)
+date_col = next((c for c in df.columns if any(x in c for x in ["date", "year", "time", "publish"])), None)
 category_col = next((c for c in df.columns if "category" in c), None)
 
 if not title_col:
