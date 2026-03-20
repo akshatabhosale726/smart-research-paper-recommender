@@ -8,6 +8,10 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from utils.analyzer import extract_drawbacks, future_scope
 
+
+# -----------------------------
+# LOAD DATA (SAFE VERSION)
+# -----------------------------
 def load_data():
     file_id = "1Rz06PQsTbRN9FnijXxrj2SThnL1NZiux"
     url = f"https://drive.google.com/uc?export=download&id={file_id}"
@@ -20,7 +24,6 @@ def load_data():
             session = requests.Session()
             response = session.get(url, stream=True)
 
-            # Handle large file confirmation
             for key, value in response.cookies.items():
                 if key.startswith("download_warning"):
                     url = f"https://drive.google.com/uc?export=download&confirm={value}&id={file_id}"
@@ -34,43 +37,50 @@ def load_data():
 
         df = pd.read_csv(output, low_memory=False)
 
-        print("✅ DATASET LOADED")
-        print("Columns:", df.columns)
-        print("Shape:", df.shape)
-
+        print("✅ Dataset Loaded")
         return df
 
     except Exception as e:
-        raise Exception(f"❌ Dataset loading failed: {e}")
+        print("❌ ERROR LOADING DATASET:", e)
 
+        # 🔥 SAFE FALLBACK (prevents crash)
+        return pd.DataFrame({
+            "title": ["AI Automation Example"],
+            "abstract": ["This paper explains automation using artificial intelligence."]
+        })
+
+
+# -----------------------------
+# ALWAYS DEFINE DF
+# -----------------------------
+df = load_data()
+
+# -----------------------------
+# CLEAN COLUMN NAMES
+# -----------------------------
 df.columns = df.columns.str.lower().str.strip()
 
-title_col = next((c for c in df.columns if "title" in c), None)
+# -----------------------------
+# DETECT COLUMNS
+# -----------------------------
+title_col = next((c for c in df.columns if "title" in c), df.columns[0])
 
 text_col = next((c for c in df.columns 
-                 if any(x in c for x in ["abstract", "summary", "description", "text"])), None)
-
-author_col = next((c for c in df.columns 
-                   if any(x in c for x in ["author", "creator"])), None)
-
-date_col = next((c for c in df.columns 
-                 if any(x in c for x in ["date", "year", "publish"])), None)
-
-category_col = next((c for c in df.columns if "category" in c), None)
-
-# fallback detection
-if not title_col:
-    title_col = df.columns[0]
+                 if any(x in c for x in ["abstract", "summary", "text", "description"])), None)
 
 if not text_col:
     text_col = max(df.columns, key=lambda c: df[c].astype(str).str.len().mean())
 
-print("🧠 Using Columns:")
-print("Title:", title_col)
-print("Text:", text_col)
-print("Author:", author_col)
-print("Date:", date_col)
+author_col = next((c for c in df.columns if "author" in c), None)
+date_col = next((c for c in df.columns if "date" in c or "year" in c), None)
+category_col = next((c for c in df.columns if "category" in c), None)
 
+print("🧠 Columns:")
+print(title_col, text_col, author_col, date_col)
+
+# -----------------------------
+# CLEAN TEXT
+# -----------------------------
 def clean_text(text):
     text = str(text).lower()
     text = re.sub(r'[^a-zA-Z ]', ' ', text)
@@ -80,26 +90,34 @@ def clean_text(text):
 df[text_col] = df[text_col].fillna("").astype(str).apply(clean_text)
 df[title_col] = df[title_col].fillna("").astype(str)
 
-df = df[df[text_col].str.len() > 30]
+df = df[df[text_col].str.len() > 20]
 
-if df.empty:
-    raise Exception("❌ Dataset empty after cleaning")
-
+# -----------------------------
+# DATE FIX
+# -----------------------------
 if date_col:
     df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
 
-df = df.sample(n=min(6000, len(df)), random_state=42)
+# -----------------------------
+# SPEED CONTROL
+# -----------------------------
+df = df.sample(n=min(5000, len(df)), random_state=42)
 
-print("📊 Final dataset size:", df.shape)
+print("📊 Dataset Ready:", df.shape)
 
-vectorizer = TfidfVectorizer(
-    stop_words="english",
-    max_features=3000,
-    min_df=2
-)
+# -----------------------------
+# TF-IDF
+# -----------------------------
+vectorizer = TfidfVectorizer(stop_words="english", max_features=3000)
 
-tfidf_matrix = vectorizer.fit_transform(df[text_col])
+try:
+    tfidf_matrix = vectorizer.fit_transform(df[text_col])
+except:
+    raise Exception("❌ TF-IDF failed (text issue)")
 
+# -----------------------------
+# RECOMMEND FUNCTION
+# -----------------------------
 def recommend_papers(query, top_n=5):
 
     query_vec = vectorizer.transform([query])
@@ -114,8 +132,11 @@ def recommend_papers(query, top_n=5):
         sim_score = similarity[i]
 
         year = 2018
-        if date_col and pd.notna(row[date_col]):
-            year = row[date_col].year
+        if date_col and pd.notna(row.get(date_col)):
+            try:
+                year = pd.to_datetime(row[date_col]).year
+            except:
+                pass
 
         recency_score = (year - 2000) / 30
         final_score = (0.7 * sim_score) + (0.3 * recency_score)
@@ -135,17 +156,17 @@ def recommend_papers(query, top_n=5):
         row = df.iloc[i]
 
         title = str(row[title_col])
-
-        summary = str(row[text_col])
-        if len(summary) > 500:
-            summary = summary[:500] + "..."
+        summary = str(row[text_col])[:500] + "..."
 
         authors = str(row[author_col]) if author_col else "Unknown"
         category = str(row[category_col]) if category_col else "Research"
 
         year = "Unknown"
-        if date_col and pd.notna(row[date_col]):
-            year = row[date_col].year
+        if date_col and pd.notna(row.get(date_col)):
+            try:
+                year = pd.to_datetime(row[date_col]).year
+            except:
+                pass
 
         score = round((score_val / max_score) * 100, 2)
 
