@@ -1,125 +1,76 @@
 import pandas as pd
-import os
 import requests
 from io import StringIO
 
-from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 from utils.analyzer import extract_drawbacks, future_scope
-
 def load_data():
+    file_id = "1Rz06PQsTbRN9FnijXxrj2SThnL1NZiux"
+    url = f"https://drive.google.com/uc?export=download&id={file_id}"
+
     try:
-        file_id = "1Rz06PQsTbRN9FnijXxrj2SThnL1NZiux"
-
-        url = f"https://drive.google.com/uc?export=download&id={file_id}"
-
-        response = requests.get(url)
+        response = requests.get(url, timeout=20)
         response.raise_for_status()
 
-        print("🔍 Raw data preview:\n", response.text[:500])
+        df = pd.read_csv(StringIO(response.text), low_memory=False)
 
-        try:
-            df = pd.read_csv(StringIO(response.text))
-        except:
-            df = pd.read_csv(StringIO(response.text), sep=';')
-
-        print("✅ Dataset loaded")
+        print("✅ Dataset Loaded Successfully")
         print("Columns:", df.columns)
         print("Shape:", df.shape)
 
         return df
 
     except Exception as e:
-        raise Exception(f"❌ Error loading dataset: {e}")
+        print("❌ ERROR loading dataset:", e)
+
+        # fallback minimal dataset
+        return pd.DataFrame({
+            "title": ["AI Automation Example"],
+            "abstract": ["This paper explains automation using artificial intelligence."]
+        })
 
 
 df = load_data()
-
 df.columns = df.columns.str.lower().str.strip()
 
-print("🧹 Cleaned Columns:", df.columns)
-
-title_col = None
-text_col = None
-
-# Detect title
-for col in df.columns:
-    if "title" in col:
-        title_col = col
-        break
-
-# Detect text
-priority_keywords = ["abstract", "summary", "text", "content", "description"]
-
-for key in priority_keywords:
-    for col in df.columns:
-        if key in col:
-            text_col = col
-            break
-    if text_col:
-        break
-        
-if not text_col:
-    print("⚠️ No standard text column found, selecting largest column")
-
-    lengths = {}
-    for col in df.columns:
-        try:
-            lengths[col] = df[col].astype(str).str.len().mean()
-        except:
-            continue
-
-    text_col = max(lengths, key=lengths.get)
-
-# Final fallback
-if not title_col:
-    title_col = df.columns[0]
-
-print("✅ Title column:", title_col)
-print("✅ Text column:", text_col)
-
+# detect columns
+title_col = next((c for c in df.columns if "title" in c), None)
+text_col = next((c for c in df.columns if "abstract" in c or "summary" in c), None)
 author_col = next((c for c in df.columns if "author" in c), None)
 date_col = next((c for c in df.columns if "date" in c or "year" in c), None)
 category_col = next((c for c in df.columns if "category" in c), None)
+
+if not title_col:
+    title_col = df.columns[0]
+
+if not text_col:
+    text_col = max(df.columns, key=lambda c: df[c].astype(str).str.len().mean())
+
+print("🧠 Using:")
+print("Title:", title_col)
+print("Text:", text_col)
 
 df[text_col] = df[text_col].fillna("").astype(str)
 df[title_col] = df[title_col].fillna("").astype(str)
 
 df = df[df[text_col].str.strip() != ""]
 
-if df.empty:
-    print("⚠️ Dataset empty → using fallback data")
-
-    df = pd.DataFrame({
-        "title": ["Sample Research Paper"],
-        "abstract": ["This paper discusses machine learning techniques."]
-    })
-
-    title_col = "title"
-    text_col = "abstract"
+df = df.sample(n=min(8000, len(df)), random_state=42)
 
 print("📊 Final dataset size:", df.shape)
 
-try:
-    vectorizer = TfidfVectorizer(stop_words="english", max_features=5000)
-    tfidf_matrix = vectorizer.fit_transform(df[text_col])
-except:
-    raise Exception("❌ TF-IDF failed → text data issue")
-
-def extract_keywords(text):
-    try:
-        cv = CountVectorizer(stop_words="english", max_features=5)
-        return ", ".join(cv.fit([text]).get_feature_names_out())
-    except:
-        return "N/A"
+vectorizer = TfidfVectorizer(stop_words="english", max_features=3000)
+tfidf_matrix = vectorizer.fit_transform(df[text_col])
 
 def recommend_papers(query, top_n=5):
 
     query_vec = vectorizer.transform([query])
     similarity = cosine_similarity(query_vec, tfidf_matrix).flatten()
 
-    top_indices = similarity.argsort()[-100:]
+    # get best indices
+    top_indices = similarity.argsort()[-top_n*5:]
 
     results = []
 
@@ -127,18 +78,20 @@ def recommend_papers(query, top_n=5):
         row = df.iloc[i]
         sim_score = similarity[i]
 
-        year = 2000
-        if date_col and pd.notna(row[date_col]):
+        # year handling
+        year = 2015
+        if date_col and pd.notna(row.get(date_col)):
             try:
                 year = pd.to_datetime(row[date_col]).year
             except:
                 pass
 
         recency_score = (year - 2000) / 30
-        final_score = (0.65 * sim_score) + (0.35 * recency_score)
+        final_score = (0.7 * sim_score) + (0.3 * recency_score)
 
         results.append((i, final_score))
 
+    # sort
     results = sorted(results, key=lambda x: x[1], reverse=True)[:top_n]
 
     if not results:
@@ -152,13 +105,13 @@ def recommend_papers(query, top_n=5):
         row = df.iloc[i]
 
         title = str(row[title_col])
-        summary = str(row[text_col])[:500] + "..."
+        summary = str(row[text_col])[:400] + "..."
 
         authors = row[author_col] if author_col else "Unknown"
         category = row[category_col] if category_col else "Research"
 
         year = "Unknown"
-        if date_col and pd.notna(row[date_col]):
+        if date_col and pd.notna(row.get(date_col)):
             try:
                 year = pd.to_datetime(row[date_col]).year
             except:
@@ -175,7 +128,6 @@ def recommend_papers(query, top_n=5):
             "year": year,
             "category": category,
             "summary": summary,
-            "keywords": extract_keywords(summary),
 
             "drawbacks": extract_drawbacks(summary),
             "future_scope": future_scope(),
