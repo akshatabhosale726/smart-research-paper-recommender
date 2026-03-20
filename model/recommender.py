@@ -1,6 +1,6 @@
 import pandas as pd
+import requests
 import os
-import gdown
 import re
 
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -10,14 +10,27 @@ from utils.analyzer import extract_drawbacks, future_scope
 
 def load_data():
     file_id = "1Rz06PQsTbRN9FnijXxrj2SThnL1NZiux"
+    url = f"https://drive.google.com/uc?export=download&id={file_id}"
     output = "dataset.csv"
 
     try:
-        # download only once
         if not os.path.exists(output):
-            url = f"https://drive.google.com/uc?id={file_id}"
             print("⬇ Downloading dataset...")
-            gdown.download(url, output, quiet=False)
+
+            session = requests.Session()
+            response = session.get(url, stream=True)
+
+            # Handle large file confirmation
+            for key, value in response.cookies.items():
+                if key.startswith("download_warning"):
+                    url = f"https://drive.google.com/uc?export=download&confirm={value}&id={file_id}"
+                    response = session.get(url, stream=True)
+                    break
+
+            with open(output, "wb") as f:
+                for chunk in response.iter_content(1024):
+                    if chunk:
+                        f.write(chunk)
 
         df = pd.read_csv(output, low_memory=False)
 
@@ -30,8 +43,6 @@ def load_data():
     except Exception as e:
         raise Exception(f"❌ Dataset loading failed: {e}")
 
-
-df = load_data()
 df.columns = df.columns.str.lower().str.strip()
 
 title_col = next((c for c in df.columns if "title" in c), None)
@@ -43,10 +54,11 @@ author_col = next((c for c in df.columns
                    if any(x in c for x in ["author", "creator"])), None)
 
 date_col = next((c for c in df.columns 
-                 if any(x in c for x in ["date", "year", "time", "publish"])), None)
+                 if any(x in c for x in ["date", "year", "publish"])), None)
 
 category_col = next((c for c in df.columns if "category" in c), None)
 
+# fallback detection
 if not title_col:
     title_col = df.columns[0]
 
@@ -71,7 +83,7 @@ df[title_col] = df[title_col].fillna("").astype(str)
 df = df[df[text_col].str.len() > 30]
 
 if df.empty:
-    raise Exception("❌ Dataset became empty after cleaning")
+    raise Exception("❌ Dataset empty after cleaning")
 
 if date_col:
     df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
@@ -101,7 +113,6 @@ def recommend_papers(query, top_n=5):
         row = df.iloc[i]
         sim_score = similarity[i]
 
-        # year handling
         year = 2018
         if date_col and pd.notna(row[date_col]):
             year = row[date_col].year
@@ -111,8 +122,10 @@ def recommend_papers(query, top_n=5):
 
         results.append((i, final_score))
 
-    # sort results
     results = sorted(results, key=lambda x: x[1], reverse=True)[:top_n]
+
+    if not results:
+        return []
 
     max_score = results[0][1] if results[0][1] != 0 else 1
 
