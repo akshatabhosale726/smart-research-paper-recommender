@@ -35,7 +35,6 @@ def load_data():
 df = load_data()
 df.columns = df.columns.str.lower().str.strip()
 
-# detect columns
 title_col = next((c for c in df.columns if "title" in c), None)
 text_col = next((c for c in df.columns if "abstract" in c or "summary" in c), None)
 author_col = next((c for c in df.columns if "author" in c), None)
@@ -51,12 +50,31 @@ if not text_col:
 print("🧠 Using:")
 print("Title:", title_col)
 print("Text:", text_col)
+import re
 
-df[text_col] = df[text_col].fillna("").astype(str)
+def clean_text(text):
+    text = str(text).lower()
+    text = re.sub(r'[^a-zA-Z ]', ' ', text)   
+    text = re.sub(r'\s+', ' ', text).strip() 
+    return text
+
+df[text_col] = df[text_col].fillna("").astype(str).apply(clean_text)
 df[title_col] = df[title_col].fillna("").astype(str)
 
-df = df[df[text_col].str.strip() != ""]
+df = df[df[text_col].str.len() > 20]
 
+if df.empty:
+    print("⚠️ Dataset empty after cleaning → using fallback")
+
+    df = pd.DataFrame({
+        "title": ["AI Automation"],
+        "abstract": ["Artificial intelligence is used for automation and machine learning tasks."]
+    })
+
+    title_col = "title"
+    text_col = "abstract"
+
+print("✅ Cleaned dataset size:", df.shape)
 df = df.sample(n=min(8000, len(df)), random_state=42)
 
 print("📊 Final dataset size:", df.shape)
