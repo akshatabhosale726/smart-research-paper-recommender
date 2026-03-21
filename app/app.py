@@ -7,68 +7,41 @@ sys.path.append(BASE_DIR)
 
 from model.recommender import recommend_papers
 
-st.set_page_config(
-    page_title="Smart Research Paper Recommender",
-    layout="wide"
-)
+st.set_page_config(page_title="Smart Research Paper Recommender")
 
 st.title("📚 Smart Research Paper Recommendation System")
-
-st.write("🔍 Discover the most relevant and latest research papers.")
+st.write("🔍 Discover latest and most relevant research papers")
 
 query = st.text_input("🔍 Enter research topic")
 
-if st.button("Search Papers"):
+if st.button("Search"):
 
-    if query.strip() == "":
-        st.warning("Please enter a research topic")
+    results = recommend_papers(query)
 
+    if not results:
+        st.error("No results found. Try different query.")
     else:
-
-        papers = recommend_papers(query)
-
         st.subheader("Top Relevant Papers")
-        st.caption("Results ranked using TF-IDF similarity + recency-based scoring")
 
-        for paper in papers:
-
-            st.markdown(f"## {paper['title']}")
+        for paper in results:
+            st.markdown(f"### {paper['title']}")
 
             col1, col2 = st.columns(2)
+            col1.metric("📊 Score", f"{paper['score']}%")
+            col2.metric("📅 Year", paper['year'])
 
-            col1.metric("📊 Relevance Score", f"{paper['score']} %")
-            col2.metric("📅 Year", paper["year"])
+            st.write(f"👨‍🔬 Authors: {paper['authors']}")
+            st.write(f"🏷 Category: {paper['category']}")
 
-            if paper["authors"]:
-                st.markdown(f"**👨‍🔬 Authors:** {paper['authors']}")
-
-            if paper["category"]:
-                st.markdown(f"**🏷 Category:** {paper['category']}")
-
-            st.markdown("### 📄 Abstract / Summary")
+            st.write("📄 Abstract")
             st.write(paper["summary"])
 
-            st.markdown("### ⚠ Drawbacks")
+            st.write("⚠ Drawbacks")
             st.write(paper["drawbacks"])
 
-            st.markdown("### 🚀 Future Scope")
+            st.write("🚀 Future Scope")
             st.write(paper["future_scope"])
 
-            st.markdown("### 🔗 Links")
+            st.markdown(f"[🔗 Paper]({paper['paper_link']}) | [📄 PDF]({paper['pdf_link']}) | [📈 Scholar]({paper['scholar']})")
 
-            st.markdown(
-                f'<a href="{paper["paper_link"]}" target="_blank">🔗 Original Paper Page</a>',
-                unsafe_allow_html=True
-            )
-
-            st.markdown(
-                f'<a href="{paper["pdf_link"]}" target="_blank">📄 View PDF</a>',
-                unsafe_allow_html=True
-            )
-
-            st.markdown(
-                f'<a href="{paper["scholar"]}" target="_blank">📈 Google Scholar</a>',
-                unsafe_allow_html=True
-            )
-
-            st.markdown("---")
+            st.write("---")
