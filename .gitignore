@@ -1,0 +1,23 @@
+# Large dataset files (too large for GitHub)
+dataset/arXiv_scientific dataset.csv
+dataset/arXiv_scientific dataset.zip
+dataset/*.zip
+
+# Keep the sampled dataset for deployment
+!dataset/arxiv_sampled.csv
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Streamlit cache
+.streamlit/cache/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
